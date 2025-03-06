@@ -1,0 +1,272 @@
+Comandos usados practica 1
+
+============================================
+ssh-keygen -t rsa -b 4096
+
+ssh-copy-id usuario@servidor_destino
+
+sudo apt install rsync -y
+
+cd Desktop
+mkdir carlitos 
+cd carlitos 
+touch carpeta{1..10}.txt
+ls
+
+rsync -avz  /home/maxdeb/Escritorio/carlitos/ maxwell20241209@10.0.0.12:/home/maxwell20241209/Desktop
+
+sudo nano carpeta50.txt
+
+rsync -avz  /home/maxdeb/Escritorio/carlitos/ maxwell20241209@10.0.0.12:/home/maxwell20241209/Desktop
+
+sudo nano /prueba_rsync.sh
+
+rsync -avz  /home/maxdeb/Escritorio/carlitos/ maxwell20241209@10.0.0.12:/home/maxwell20241209/Desktop
+
+
+
+2. Configurar el crontab para ejecutar el script cada minuto
+Abre el editor de cron:
+
+crontab -e
+
+Añade esta línea al final:
+
+* * * * * /bin/bash /prueba_rsync.sh 
+
+que por cierto los que nos indica un asterisco en un crontab, representan valores que indican que la tarea debe ejecutarse en cualquier momento posible dentro de la unidad de tiempo correspondiente. 
+
+Esto significa:
+
+* → Cada minuto
+* → Cada hora
+* → Cada día del mes
+* → Cada mes
+* → Cualquier día de la semana
+
+3. Verificar que funciona
+En el servidor primario, crea un archivo dentro de /home/maxdeb/Escritorio/carlitos/:
+
+touch /home/maxdeb/Escritorio/carlios/vegeta.txt
+
+
+Después de un minuto, revisa en el servidor secundario:
+
+ls /home/maxwell20241209/Desktop/
+
+Comandos usados practica 2
+
+============================================
+Configuración en Ambos Nodos 
+1.1 Instalar Heartbeat en ambos nodos 
+Ejecuta en los dos nodos: 
+
+sudo apt update && sudo apt install heartbeat -y
+ 
+Configuración en el Nodo 1 (debian-server)
+ 
+2.1 Editar /etc/ha.d/ha.cf 
+
+sudo nano /etc/ha.d/ha.cf
+ 
+logfile /var/log/ha-log 
+keepalive 2 
+deadtime 10 
+bcast ens33
+node debian-server 
+node Debian
+ 
+Explicación: 
+• keepalive 2 → Cada 2 segundos envía una señal entre nodos. 
+• deadtime 10 → Si un nodo no responde en 10s, se considera caído. 
+• bcast ens33 → Se usará la interfaz eth0 para la comunicación. 
+• node debian-server → Nombre del nodo 1 (uname -n). 
+• node debian → Nombre del nodo 2 (uname -n). 
+
+2.2 Configurar Autenticación 
+sudo nano /etc/ha.d/authkeys 
+Añade:
+ 
+auth 3 
+3 md5 clave-secreta
+ 
+Cambia permisos de seguridad:
+ 
+sudo chmod 600 /etc/ha.d/authkeys 
+
+2.3 Definir Recursos 
+
+sudo nano /etc/ha.d/haresources
+ 
+debian-server 10.0.0.200/24/eth0
+ 
+• debian-server → Nodo principal (uname -n). 
+• 10.0.0.200/24/eth0 → La IP flotante del clúster.
+ 
+Configuración en el Nodo 2 (debian) 
+Repite los mismos pasos del Nodo 1. 
+
+Copia los archivos desde debian-server: 
+
+scp /etc/ha.d/ha.cf /etc/ha.d/authkeys /etc/ha.d/haresources 
+debian:/etc/ha.d/ 
+
+Explicación 
+• scp → Secure Copy Protocol, usado para copiar archivos de manera segura entre 
+equipos a través de SSH. 
+• /etc/ha.d/ha.cf → Archivo de configuración principal de Heartbeat. 
+• /etc/ha.d/authkeys → Archivo de autenticación del clúster. 
+• /etc/ha.d/haresources → Archivo que define la IP flotante y los servicios gestionados. 
+• debian:/etc/ha.d/ → 
+o debian → Nombre del host o dirección IP del nodo 2 (debes poder hacer SSH a 
+él). 
+o /etc/ha.d/ → Carpeta destino en el nodo 2. 
+
+Iniciar y Probar el Clúster 
+4.1 Habilitar y arrancar Heartbeat en ambos nodos 
+Ejecuta en ambos nodos: 
+
+sudo systemctl restart heartbeat 
+sudo systemctl enable heartbeat 
+sudo systemctl status heartbeat 
+
+Comandos usados practica 3
+
+============================================
+
+1. Preparar los Servidores
+- Servidor 1: 192.168.1.10
+- Servidor 2: 192.168.1.20
+- IP Virtual (VIP): 192.168.1.100` (esta será la IP flotante)
+
+
+*2. Instalar Apache en Ambos Servidores
+En cada servidor, instala Apache:
+
+sudo apt install apache2 -y
+
+
+Habilita y arranca el servicio:
+
+
+sudo systemctl enable apache2
+sudo systemctl start apache2
+
+
+3. Configurar Páginas HTML en Cada Servidor
+En el Servidor 1 (192.168.1.10), edita la página web principal
+
+echo "<h1>Servidor 1, MASTER</h1>" | sudo tee /var/www/html/index.html
+
+
+En el Servidor 2 (192.168.1.20), edita la página web principal:
+
+
+echo "<h1>Servidor 2, BACKUP</h1>" | sudo tee /var/www/html/index.html
+
+
+Reinicia Apache en ambos servidores:
+
+
+sudo systemctl restart apache2
+
+
+Prueba accediendo desde un navegador a `http://192.168.1.10` y `http://192.168.1.20`.
+
+4. Instalar y Configurar Keepalived
+Instala Keepalived en ambos servidores:
+
+
+sudo apt install keepalived -y
+
+
+4.1 Configurar Keepalived en el Servidor 1 (Master)
+Edita el archivo de configuración:
+
+
+sudo nano /etc/keepalived/keepalived.conf
+
+
+Añade lo siguiente:
+
+
+vrrp_instance VI_1 {
+    state MASTER
+    interface ens192  
+    virtual_router_id 51
+    priority 101
+    advert_int 1
+    authentication {
+        auth_type PASS
+        auth_pass 12345
+    }
+    virtual_ipaddress {
+        192.168.1.100
+    }
+}
+
+
+Guarda y cierra el archivo.
+
+4.2 Configurar Keepalived en el Servidor 2 (Backup)**
+Edita el archivo de configuración:
+
+
+sudo nano /etc/keepalived/keepalived.conf
+
+
+Añade lo siguiente:
+
+
+vrrp_instance VI_1 {
+    state BACKUP
+    interface ens192  # Cambia esto por tu interfaz de red
+    virtual_router_id 51
+    priority 100
+    advert_int 1
+    authentication {
+        auth_type PASS
+        auth_pass 12345
+    }
+    virtual_ipaddress {
+        192.168.1.100
+    }
+}
+
+
+Guarda y cierra el archivo.
+
+4.3 Iniciar Keepalived en Ambos Servidores
+Inicia y habilita el servicio:
+
+sudo systemctl enable keepalived
+sudo systemctl restart keepalived
+
+
+Verifica que la IP Virtual esté asignada en el **servidor MASTER**:
+
+
+ip a | grep 192.168.1.100
+
+
+Si ves la IP en `Server1`, significa que Keepalived está funcionando correctamente.
+
+
+
+5. Probar Alta Disponibilidad
+Desde un navegador accede a:
+
+http://192.168.1.100
+
+
+Debe mostrar la página del servidor **Master** (Servidor 1).
+
+Apaga el Servidor 1:
+
+
+sudo poweroff
+
+
+Vuelve a acceder a http://192.168.1.100. Ahora debe responder el Servidor 2 (Servidor 2).
+
+Cuando vuelvas a encender el Servidor 1, Keepalived lo reconocerá como el nuevo Master si su prioridad sigue siendo más alta.
