@@ -1,0 +1,256 @@
+Comandos Laboratorio Modulo 5
+
+Comandos usados practica 1
+
+============================================
+
+
+sudo apt install rsync 
+
+sudo systemctl status rsync
+
+sudo systemctl enable rsync
+
+sudo systemctl status rsync
+
+sudo systemctl start rsync 
+
+sudo systemctl status rsync
+
+ifconfig
+
+ssh-keygen -t rsa -b 4096 (para generar las llaves) y le damos enter para q se guarde en la ubicación por defecto 
+
+ssh-copy-id d2024-1197@192.168.0.18 (y esto es para copiar la ubicación de la otra maquina)
+
+ssh d2024-1197@192.168.0.18
+
+exit
+
+cd Desktop
+
+mkdir goku
+
+cd goku
+
+touch carpeta{1..100}.txt
+   
+ls
+
+rsync -avz  /home/d2024-1197/Desktop/goku/ d2024-1197@192.168.0.18:/home/d2024-1197/Desktop 
+
+sudo nano carpeta10.txt
+
+rsync -avz  /home/d2024-1197/Desktop/goku/ d2024-1197@192.168.0.18:/home/d2024-1197/Desktop
+
+
+1. Crear el script de sincronización
+En el servidor primario, crea el archivo del script:
+
+nano ~/sync_script.sh
+
+Añade el siguiente contenido:
+
+#!/bin/bash
+rsync -avz /home/d2024-1197/Desktop/goku/ d2024-1197@192.168.0.18:/home/d2024-1197/Desktop
+
+
+Dale permisos de ejecución:
+
+chmod +x ~/sync_script.sh
+
+
+2. Configurar el crontab para ejecutar el script cada minuto
+Abre el editor de cron:
+
+crontab -e
+
+Añade esta línea al final:
+
+* * * * * /bin/bash ~/sync_script.sh 
+
+que por cierto los que nos indica un asterisco en un crontab, representan valores que indican que la tarea debe ejecutarse en cualquier momento posible dentro de la unidad de tiempo correspondiente. 
+
+Esto significa:
+
+* → Cada minuto
+* → Cada hora
+* → Cada día del mes
+* → Cada mes
+* → Cualquier día de la semana
+
+3. Verificar que funciona
+En el servidor primario, crea un archivo dentro de /home/d2024-1197/Desktop/goku/:
+
+touch /home/d2024-1197/Desktop/goku/test_sync.txt
+
+
+Después de un minuto, revisa en el servidor secundario:
+
+ls /home/d2024-1197/Desktop/
+
+
+Comandos usados practica 2
+
+============================================
+
+2. Instalar Pacemaker y Corosync
+Ejecutar en ambos nodos:
+
+sudo apt update
+sudo apt install -y pacemaker corosync crmsh
+
+Verifica la instalación:
+
+systemctl status pacemaker corosync
+
+3. Configurar Corosync
+Edita /etc/corosync/corosync.conf en ambos nodos:
+
+sudo nano /etc/corosync/corosync.conf
+
+Ejemplo de configuración:
+
+totem {
+    version: 2
+    cluster_name: danielelias
+    transport: udpu
+}
+
+nodelist {
+    node {
+        ring0_addr: 192.168.0.18  # Nodo1
+        name: danielelias
+        nodeid: 1
+    }
+    node {
+        ring0_addr: 192.168.0.19  # Nodo2
+        name: daniellendof
+        nodeid: 2
+    }
+}
+
+quorum {
+    provider: corosync_votequorum
+    two_node: 1
+}
+
+logging {
+    to_syslog: yes
+}
+
+
+Aplica la configuración en ambos nodos:
+
+sudo systemctl restart corosync
+sudo systemctl enable corosync
+
+
+Verifica el estado:
+
+sudo corosync-cmapctl | grep members
+
+
+4. Iniciar y Configurar Pacemaker
+En ambos nodos:
+
+sudo systemctl start pacemaker
+sudo systemctl enable pacemaker
+
+Verifica el estado:
+
+sudo crm_mon -1
+
+
+5. Configurar la IP Flotante
+
+En el nodo principal, configura una IP flotante en el clúster:
+
+sudo crm configure property stonith-enabled=false
+sudo crm configure primitive vip ocf:heartbeat:IPaddr2 \
+   params ip=192.168.0.200 cidr_netmask=24 \
+   op monitor interval=30s
+
+
+Verifica la configuración:
+
+sudo crm configure show
+
+
+6. Pruebas de Alta Disponibilidad
+Haz ping desde un equipo externo:
+
+ping 192.168.0.200
+
+Reinicia el nodo principal y verifica que la IP flotante se mueva al nodo secundario.
+
+sudo reboot
+
+Observa que el ping no debe interrumpirse.
+
+Repite la prueba alternando reinicios entre los nodos.
+
+7. Verificar el Estado del Clúster
+Ejecuta:
+
+sudo crm_mon -1
+
+Debe mostrar que la IP está asignada a uno de los nodos y que ambos están en estado activo.
+
+
+Comandos usados practica 3
+
+============================================
+
+
+sudo apt update && sudo apt install -y apache2 keepalived
+sudo systemctl enable --now apache2
+
+echo '<h1>Este es el Servidor 1</h1>' | sudo tee /var/www/html/index.html
+
+echo '<h1>Este es el Servidor 2</h1>' | sudo tee /var/www/html/index.html
+
+sudo tee /etc/keepalived/keepalived.conf > /dev/null <<EOF
+vrrp_instance VI_1 {
+    state MASTER
+    interface ens192
+    virtual_router_id 51
+    priority 100
+    advert_int 1
+    authentication {
+        auth_type PASS
+        auth_pass 123456
+    }
+    virtual_ipaddress {
+        192.168.1.100
+    }
+}
+EOF
+sudo systemctl restart keepalived
+sudo systemctl enable keepalived
+
+sudo tee /etc/keepalived/keepalived.conf > /dev/null <<EOF
+vrrp_instance VI_1 {
+    state BACKUP
+    interface ens192
+    virtual_router_id 51
+    priority 90
+    advert_int 1
+    authentication {
+        auth_type PASS
+        auth_pass 123456
+    }
+    virtual_ipaddress {
+        192.168.1.100
+    }
+}
+EOF
+sudo systemctl restart keepalived
+sudo systemctl enable keepalived
+
+ping -c 4 192.168.1.100
+curl http://192.168.1.100
+
+sudo systemctl stop apache2
+curl http://192.168.1.100
+
